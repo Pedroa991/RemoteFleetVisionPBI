@@ -59,7 +59,7 @@ data_replace_text = pd.DataFrame(np.array([
 ), columns=['de', 'para'])
 
 maintenance_list = ['Site', 'Asset', 'SH_by_Day', 'SMH_Calc', 'SMH', 'Fuel_by_Day', 'Total_Fuel_Calc', 'Total_Fuel',
-                    'Next_Prev', 'Prev_Date', 'Next_OVH', 'OVH_Date']
+                    'Next_Prev', 'Prev_Date', 'Next_OVH', 'OVH_Date', 'Per_by', 'Ovh_by']
 
 std_param_list = ['Timestamp', 'Load', 'RPM', 'Coolant_Temp', 'Oil_Press', 'Oil_Temp', 'Batt', 'Boost', 'Fuel_Rate',
                   'EXH_L', 'EXH_R', 'Total_Fuel', 'Fuel_Press', 'Crank_Press', 'Total_Fuel_DIFF', 'SMH_DIFF',
@@ -381,8 +381,8 @@ def delalerts(df):
 def maintenanceoutput(dfoutput, lastused, asset_sn, datasetvazio):
     site_name = findsitename(asset_sn)
 
-    fcd, fct, totfc = fuelcalc(dfoutput, asset_sn)
-    shd, sht, totsh = smhcalc(dfoutput, asset_sn)
+    fcd, fct, totfc = dictfuelday[asset_sn]
+    shd, sht, totsh = dictsmhday[asset_sn]
 
     print('Ativo:', str(asset_sn))
     print('Consumo por dia:', str(fcd), 'Consumo Total do período:', str(fct))
@@ -393,15 +393,17 @@ def maintenanceoutput(dfoutput, lastused, asset_sn, datasetvazio):
         next_preventiva_day = np.nan
         next_overhaul = np.nan
         next_overhaul_day = np.nan
+        manper_by = np.nan
+        manovh_by = np.nan
     else:
-        next_preventiva, next_preventiva_day, next_overhaul, next_overhaul_day  = maintcalc(totsh, shd, totfc, fcd, lastused, asset_sn)
+        next_preventiva, next_preventiva_day, next_overhaul, next_overhaul_day, manper_by, manovh_by  = maintcalc(totsh, shd, totfc, fcd, lastused, asset_sn)
         
     print('Proxima manutenção preventiva:', str(next_preventiva), 'horas.', 'Data:', str(next_preventiva_day))
     print('Proximo overhaul:', str(next_overhaul), '.', 'Data:', str(next_overhaul_day))
     print(' ')
 
     df = pd.DataFrame([[site_name, asset_sn, shd, sht, totsh, fcd, fct, totfc, next_preventiva, next_preventiva_day,
-                        next_overhaul, next_overhaul_day]],
+                        next_overhaul, next_overhaul_day, manper_by, manovh_by]],
                       columns=maintenance_list)
     return df
 
@@ -436,6 +438,10 @@ def fuelcalc(df, assetname):
                     fuelbyday = round(fuelbyday, 0)
                 except ValueError:
                     fuelbyday = np.nan
+        else:
+            fuelcons = np.nan
+            fuelbyday = np.nan
+            totalfuel = np.nan
     else:
         fuelcons = np.nan
         fuelbyday = np.nan
@@ -500,7 +506,9 @@ def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
         nextperday = np.nan
         nextovhname = np.nan
         nextovhday = np.nan
-        return nextpername, nextperday, nextovhname, nextovhday
+        manper_by = np.nan
+        manovh_by = np.nan
+        return nextpername, nextperday, nextovhname, nextovhday, manper_by, manovh_by
 
     # print('***interno função manutenção***')    
     manplan = manplan.apply(pd.to_numeric, errors='ignore')
@@ -532,6 +540,7 @@ def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
             mansmh = float(manshift.loc[0, 'Run Hours'])
             manter = manshift.loc[0,'Manter']
             manshift_name = manshift.loc[0,'Maintenance Name']
+            mandate = manshift.loc[0,'Date']
            
     except KeyError:
         #mandate = np.nan
@@ -550,12 +559,28 @@ def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
     ultovhfuel = manovh['Target Fuel (L)'].max()
 
     
-    
-    
-    
-    if not isnan(manshift_name):
+    if isinstance(manshift_name, str):
         stdmainsmh = manplan.loc[manplan['Maintenance Name']==manshift_name,'Target SMH'].tolist()[0]
         stdmainfuel = manplan.loc[manplan['Maintenance Name']==manshift_name,'Target Fuel (L)'].tolist()[0]
+    
+        if isnan(lastsmh):
+            lastsmh = 0
+        if isnan(lastfuel):
+            lastfuel = 0
+        if isnan(fday):
+            fday = 0
+        if isnan(hday):
+            hday = 0
+    
+        if isnan(mansmh):
+            daydiff = (lastdayused - mandate).days
+            mansmh = lastsmh - hday*daydiff
+            
+        if isnan(manfuel):
+            daydiff = (lastdayused - mandate).days
+            manfuel = lastfuel - fday*daydiff
+        
+            
         calsmh = lastsmh + (stdmainsmh*int(mansmh/ultovhsmh) - mansmh)
         calfuel = lastfuel + (stdmainfuel*int(manfuel/ultovhfuel) - manfuel)
     else:
@@ -593,15 +618,23 @@ def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
             break
     
     #Cálculo das periódicas - Final
-    persmh = nextpersmh.loc[:,'Target SMH']
-    perfuel = nextperfuel.loc[:,'Target Fuel (L)']
-    
+    try:
+        persmh = nextpersmh.loc[:,'Target SMH']
+    except ValueError:
+        persmh = pd.DataFrame.from_dict({'Model':np.NaN,'Maintenance Name':np.NaN,'Maintenance Type':np.NaN, 'Target Fuel (L)':np.NaN,'Target SMH':np.NaN})
+    try:
+        perfuel = nextperfuel.loc[:,'Target Fuel (L)']
+    except ValueError:
+        perfuel = pd.DataFrame.from_dict({'Model':np.NaN,'Maintenance Name':np.NaN,'Maintenance Type':np.NaN, 'Target Fuel (L)':np.NaN,'Target SMH':np.NaN})
+        
     if (hday == 0 or isnan(hday) == True) and (fday == 0 or isnan(fday) == True):
         nextpername = np.nan
         nextperday = np.nan
         nextovhname = np.nan
         nextovhday = np.nan
-        return nextpername, nextperday, nextovhname, nextovhday
+        manper_by = np.nan 
+        manovh_by = np.nan
+        return nextpername, nextperday, nextovhname, nextovhday, manper_by, manovh_by
     
     if hday == 0 or isnan(hday) == True:
         ncyclesmh = ncyclefuel - 1
@@ -651,6 +684,16 @@ def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
     ovhsmh = nextovhsmh.loc[:,'Target SMH']
     ovhfuel = nextovhfuel.loc[:,'Target Fuel (L)']
     
+    try:
+        ovhsmh = nextovhsmh.loc[:,'Target SMH']
+    except ValueError:
+        ovhsmh = np.NaN
+    try:
+        ovhfuel = nextovhfuel.loc[:,'Target Fuel (L)']
+    except ValueError:
+        ovhfuel = np.NaN
+
+    
     if hday == 0 or isnan(hday) == True:
         ncyclesmh = ncyclefuel - 1
     elif fday == 0 or isnan(fday) == True:
@@ -692,22 +735,40 @@ def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
         ovhfuel = float(nextovh['Target Fuel (L)'])
         smh_ovh_remain = ovhsmh - calsmhovh
         fuel_ovh_remain = ovhfuel - calfuelovh
-        ndayovhfuel = ceil(fuel_ovh_remain/fday)
-        ndayovhsmh = ceil(smh_ovh_remain/hday)
+        
+        if fday != 0:
+            ndayovhfuel = ceil(fuel_ovh_remain/fday)
+        else:
+            ndayovhfuel = np.nan
+        
+        if hday != 0:
+            ndayovhsmh = ceil(smh_ovh_remain/hday)
+        else:
+            ndayovhsmh = np.nan
+        
         nextovhname = nextovh['Maintenance Name']
         
-        if ndayovhsmh <= ndayovhfuel:
-            nextovhday = lastdayused + pd.DateOffset(days=ndayovhsmh)
-        else:
-            nextovhday = lastdayused + pd.DateOffset(days=ndayovhfuel)
+        try:
+        
+            if ndayovhsmh <= ndayovhfuel:
+                nextovhday = lastdayused + pd.DateOffset(days=ndayovhsmh)
+            else:
+                nextovhday = lastdayused + pd.DateOffset(days=ndayovhfuel)
+        
+        except:
             
-        return nextpername.tolist()[0], nextperday, nextovhname, nextovhday
+            if ndayovhfuel == np.nan:
+                nextovhday = lastdayused + pd.DateOffset(days=ndayovhsmh)
+            elif ndayovhsmh == np.nan:
+                nextovhday = lastdayused + pd.DateOffset(days=ndayovhfuel)
+            
+        return nextpername.tolist()[0], nextperday, nextovhname, nextovhday, manper_by, manovh_by
             
                 
                     
             
     
-    return nextpername.tolist()[0], nextperday, nextovhname.tolist()[0], nextovhday
+    return nextpername.tolist()[0], nextperday, nextovhname.tolist()[0], nextovhday, manper_by, manovh_by
 #####################################################################################################
 #                                           HISTOGRAMAS                                             #
 #####################################################################################################
@@ -1225,249 +1286,13 @@ def historyconvert(historyfile):
     except FileNotFoundError:
         cdf = pd.DataFrame(columns=std_param_list)
         cdf.to_csv(dailyfolder + '/historyday_output.csv', encoding='utf-8-sig', index=False)
-    #############################################################################
-    ##################   CASO O ARQUIVO DE ENTRADA SEJA XLSX   ##################
-    #############################################################################
-
-    if historyfile.endswith('.xlsx'):
-        global ws
-        global Pdias
-        wb = openpyxl.load_workbook(historyfile)
-        print(' ')
-        print('Iniciando Extracting, Transforming and Loading...')
-        print(' ')
-
-        for a_name in asset_list:
-            if a_name != 'Totals':
-                asset_sn = a_name[-8:]
-                outws = workfolder + '/' + asset_sn + '.csv'
-                try:
-                    ws = wb[str(a_name)]
-                    wsdata = ws.values
-                    cols = next(wsdata)[0:]
-                    dataframe = pd.DataFrame(wsdata, columns=cols)
-                    
-                    if contacol(dataframe, r'.*Run Hours.*') == 0:
-                        
-                        if dataframe.columns.to_list().count('Total Operating Hours [Hours]') > 0:
-                           dataframe.rename(columns={'Total Operating Hours [Hours]': 'Run Hours'}, inplace=True)
-                            
-                        if dataframe.columns.to_list().count('Engine Total Hours of Operation [Hrs]') > 0:
-                           dataframe.rename(columns={'Engine Total Hours of Operation [Hrs]': 'Run Hours'}, inplace=True)
-                    
-                    if contacol(dataframe, r'.*Run Hours.*') == 0:
-                        
-                        if dataframe.columns.to_list().count('Total Time [Hours]') > 0:
-                           dataframe.rename(columns={'Total Time [Hours]': 'Run Hours'}, inplace=True)
-                           
-                        if dataframe.columns.to_list().count('Total Time [Hrs]') > 0:
-                           dataframe.rename(columns={'Total Time [Hrs]': 'Run Hours'}, inplace=True)
-                    
-                    if contacol(dataframe, r'.*Engine Load.*') == 0:
-                        
-                        if dataframe.columns.to_list().count('Engine Percent Load At Current Speed [%]') > 0:
-                           dataframe.rename(columns={'Engine Percent Load At Current Speed [%]': 'Engine Load'}, inplace=True)
-                           
-                    if contacol(dataframe, r'.*Fuel Consumption Rate.*') == 0:
-                        
-                        if dataframe.columns.to_list().count('Engine Fuel Rate [L/hr]') > 0:
-                           dataframe.rename(columns={'Engine Fuel Rate [L/hr]': 'Fuel Consumption Rate'}, inplace=True)
-                           
-                           
-                    for col in dataframe.columns:
-                        for badpar in list_badpar:
-                            if col == badpar:
-                                dataframe.drop(col, axis=1, inplace=True)
-                    
-                    dataframe = replace_text(dataframe, data_replace_text)
-                    
-                    
-                    dataframe['Timestamp'] = pd.to_datetime(dataframe['Timestamp'])
-                except KeyError:
-                    dataframe = pd.DataFrame(columns=std_param_list)
-                    dataframe['Timestamp'] = pd.to_datetime(dataframe['Timestamp'])
-                    dataframe.to_csv(outws, encoding='utf-8-sig', index=False)
-
-                rotinas(dataframe)
-                # salva dataframe pronto na pasta dos parametros
-                dfclean.to_csv(os.path.join(destinationfolder, workfolder) + asset_sn + '.csv', encoding='utf-8-sig',
-                               index=False)
-
-                dfhday = dfclean
-                dfhday.reset_index(drop=True, inplace=True)
-                dfhday.set_index(pd.DatetimeIndex(dfhday['Timestamp']), inplace=True)
-                dfhday = dfhday.resample('D').mean()
-                dfhday = dfhday.replace(0, np.nan)
-                dfhday['Asset'] = asset_sn
-                dfhday['Site'] = findsitename(asset_sn)
-                dailyfile = os.path.join(dailyfolder) + '/' + asset_sn + '.csv'
-                dfhday.to_csv(dailyfile, encoding='utf-8-sig', index=True)
-
-        # CONCATENA TUDO NA PLANILHA FINAL
-        dfoutput = concatenar(os.path.join(destinationfolder, workfolder), 'history_')
-
-        Pdias = np.timedelta64(
-            pd.to_datetime(dfoutput['Timestamp']).max() - pd.to_datetime(dfoutput['Timestamp']).min(), 'D').astype(int)
-
-        concatenar_profile(os.path.join(destinationfolder, loadhistdir), std_loadhist_list, 'loadhist_')
-        concatenar_profile(os.path.join(destinationfolder, rpmhistdir), std_rpmhist_list, 'rpmhist_')
-        #concatenar_study(dailyfolder, 'historyday_')
-        concatenar(dailyfolder, 'historyday_')
-
-        Pdias = np.timedelta64(
-            pd.to_datetime(dfoutput['Timestamp']).max() - pd.to_datetime(dfoutput['Timestamp']).min(), 'D').astype(int)
-
-        print(' ')
-        print('Iniciando calculos de intervalos de manutenção...')
-        print(' ')
-        # MANUTENÇÃO COMEÇA CALCULANDO CONSUMO POR DIA, TOTAL DE CONSUMO, HORAS DE SERVIÇO POR DIA, TOTAL DE HORAS DE SERVIÇO
-        dfo = pd.DataFrame(columns=maintenance_list)
-
-        for a_name in asset_list:
-            if a_name != 'Totals':
-                asset_sn = a_name[-8:]
-                dfa = dfoutput.query('Asset == @asset_sn')
-                lastused = pd.to_datetime(dfa['Timestamp']).max()
-                datasetvazio = 0
-                if dfa.empty:
-                    datasetvazio = 1
-                # print(asset_sn + ' - Dataset Vazio: ' + str(datasetvazio))
-                dfm = maintenanceoutput(dfoutput, lastused, asset_sn, datasetvazio)
-                dfo = pd.concat([dfo, dfm])
-                dfo.drop_duplicates(subset=None, inplace=True, keep='last')
-                dfo.dropna(how='all', axis=1, inplace=True)
-        checkdestiny(os.path.join(destinationfolder, mandirectory))
-        dfo.to_csv(os.path.join(destinationfolder, mandirectory) + 'maintenance_output.csv', encoding='utf-8-sig',
-                   index=False)
-
-        ####### UTILIZAÇÃO #######
-        print(' ')
-        print('Iniciando estudos de Utilização e Taxas de Consumo de Combustível...')
-        print(' ')
-
-        outdir1 = os.path.join(destinationfolder, loadstudydir)
-        outdir1h = os.path.join(destinationfolder, loadstudydirh)
-        outdir2 = os.path.join(destinationfolder, loadresumedir)
-        outdir3 = os.path.join(destinationfolder, fuelstudydir)
-        outdir4 = os.path.join(destinationfolder, fuelresumedir)
-        checkdestiny(outdir1)
-        checkdestiny(outdir1h)
-        checkdestiny(outdir2)
-        checkdestiny(outdir3)
-        checkdestiny(outdir4)
-
-        for sit in sites_list:
-            print('Sítio:', sit)
-            slist = findsiteassets(sit)
-            count = 0
-            salist = []
-            for a_name in slist:
-                if count < 1:
-                    df1 = dfoutput.query('Asset == @a_name')[
-                        ['Timestamp', 'Load', 'Fuel_Rate', 'Total_Fuel_DIFF', 'SMH_DIFF', 'EXH_DIFF']]
-                    df1.columns = ['Timestamp' if x == 'Timestamp' else str(a_name) + '_' + x for x in df1.columns]
-                    df1.reset_index(drop=True, inplace=True)
-                    dfh = df1
-                    salist.append(a_name)
-                else:
-                    df1 = dfoutput.query('Asset == @a_name')[
-                        ['Timestamp', 'Load', 'Fuel_Rate', 'Total_Fuel_DIFF', 'SMH_DIFF', 'EXH_DIFF']]
-                    df1.columns = ['Timestamp' if x == 'Timestamp' else str(a_name) + '_' + x for x in df1.columns]
-                    df1.reset_index(drop=True, inplace=True)
-                    if 'Timestamp' in dfh.columns:
-                        dfh = pd.merge_ordered(dfh, df1, fill_method='None')
-                    salist.append(a_name)
-                count += 1
-
-            # dfh.dropna(how='all', axis=1, inplace=True)
-            dfh.reset_index(drop=True, inplace=True)
-            dfh.set_index(pd.DatetimeIndex(dfh['Timestamp']), inplace=True)
-
-            dfhhr = dfh.resample('1H').mean()
-            dfhhr = dfhhr.replace(0, np.nan)
-
-            dfhmin = dfh.resample('5Min').mean()
-            dfhmin = dfhmin.replace(0, np.nan)
-
-            print('Lista de Ativos:', salist)
-
-            # LOAD RESUME
-            loadtable = pd.concat([dfhhr.loc[:, dfhhr.columns.isin(['Timestamp'])],
-                                   dfhhr.loc[:, dfhhr.columns.str.contains('Load')]], axis=1)
-
-            loadtable['QNT_SIM'] = loadtable.apply(lambda x: x.notnull().sum(), axis='columns')
-
-            fin = pd.concat([pd.DataFrame([i], columns=['QNT']) for i in range(len(slist) + 1)], ignore_index=True)
-            l = []
-            for i in range(len(slist) + 1):
-                l.append(loadtable[loadtable['QNT_SIM'] == (i)].count()['QNT_SIM'] / len(loadtable['QNT_SIM']) * 100)
-            fin['%'] = l
-            fin['Site'] = sit
-            finfile = os.path.join(outdir2) + '/' + sit + '_LOAD_RESUME' + '.csv'
-            fin.to_csv(finfile, encoding='utf-8-sig', index=False)
-
-            # LOAD STUDY
-            ltvd = loadtable.resample('1D').apply(np.ceil).round(0)
-            for x in range(len(loadtable.columns) - 1):
-                ltvd['UT' + str(x + 1) + 'E'] = (
-                        (loadtable['QNT_SIM'] == (x + 1)).resample('1D').sum().astype(int) / 24 * 100).round(1)
-            if keepfiles == 0:
-                ltvd.drop(['QNT_SIM'], axis=1, inplace=True)
-            ltvd['Site'] = sit
-            finfile2 = os.path.join(outdir1) + '/' + sit + '_LOAD_STUDY' + '.csv'
-            ltvd.to_csv(finfile2, encoding='utf-8-sig', index=True)
-
-            # LOAD STUDY 1h
-
-            loadtablemin = pd.concat([dfhmin.loc[:, dfhmin.columns.isin(['Timestamp'])],
-                                      dfhmin.loc[:, dfhmin.columns.str.contains('Load')]], axis=1)
-
-            loadtablemin['QNT_SIM'] = loadtablemin.apply(lambda x: x.notnull().sum(), axis='columns')
-
-            ltvdh = loadtablemin.resample('1H').mean().round(0)
-            for x in range(len(loadtablemin.columns) - 1):
-                ltvdh['UT' + str(x + 1) + 'E'] = (
-                        (loadtablemin['QNT_SIM'] == (x + 1)).resample('1H').sum().astype(int) / 12 * 100).round(1)
-            if keepfiles == 0:
-                ltvdh.drop(['QNT_SIM'], axis=1, inplace=True)
-            ltvdh['Site'] = sit
-            finfile2h = os.path.join(outdir1h) + '/' + sit + '_LOAD_STUDY_H' + '.csv'
-            ltvdh.to_csv(finfile2h, encoding='utf-8-sig', index=True)
-
-            # FUEL RESUME
-            fratetable = pd.concat([dfhhr.loc[:, dfhhr.columns.isin(['Timestamp'])],
-                                    dfhhr.loc[:, dfhhr.columns.str.contains('Fuel_Rate')]], axis=1)
-
-            rtvb = fratetable.copy()
-            rtvb['AVG'] = rtvb.sum(numeric_only=True, axis=1)
-
-            rtvfile = os.path.join(outdir3) + '/' + sit + '_FR_STUDY' + '.csv'
-            fratetable = fratetable.replace(0, np.nan)
-            rtvD = fratetable.resample('1D').mean().round(0)
-            rtvD['Site'] = sit
-            rtvD.to_csv(rtvfile, encoding='utf-8-sig', index=True)
-
-            fratetable['QNT_SIM'] = fratetable.apply(lambda x: x.notnull().sum(), axis='columns')
-
-            rin = pd.concat([pd.DataFrame([i], columns=['QNT']) for i in range(len(slist) + 1)], ignore_index=True)
-            l = []
-            for i in range(len(slist) + 1):
-                l.append(rtvb[fratetable['QNT_SIM'] == (i)].mean()['AVG'])
-            rin['L/hr'] = l
-            rin['Site'] = sit
-            rinfile = os.path.join(outdir4) + '/' + sit + '_FR_RESUME' + '.csv'
-            rin.to_csv(rinfile, encoding='utf-8-sig', index=False)
-
-        concatenar_study(outdir1, 'loadstudy_')
-        concatenar_study(outdir1h, 'loadstudy_H_')
-        concatenar_study(outdir2, 'loadresume_')
-        concatenar_study(outdir3, 'fuelstudy_')
-        concatenar_study(outdir4, 'fuelresume_')
-
+    
     ############################################################################
     ##################   CASO O ARQUIVO DE ENTRADA SEJA ZIP   ##################
     ############################################################################
-    elif historyfile.endswith('.zip'):
+    global Pdias, ws
+    
+    if historyfile.endswith('.zip'):
         zf = zipfile.ZipFile(historyfile)
         print(' ')
         print('Iniciando Extracting, Transforming and Loading...')
@@ -1481,6 +1306,10 @@ def historyconvert(historyfile):
                 zf = carlao.carlao(sn,historyfile)
                 asset_list.append('MCA - D1K01363')
 
+        global dictsmhday, dictfuelday
+        dictsmhday = {}
+        dictfuelday = {}
+        
         for a_name in asset_list:
             if a_name != 'Totals':
                 ws = a_name + '.csv'
@@ -1572,6 +1401,9 @@ def historyconvert(historyfile):
                 dfclean.to_csv(os.path.join(destinationfolder, workfolder) + asset_sn + '.csv', encoding='utf-8-sig',
                                index=False)
 
+                dictsmhday[asset_sn] = smhcalc(dfclean, asset_sn)
+                dictfuelday[asset_sn] = fuelcalc(dfclean, asset_sn)
+                
                 dfhday = dfclean
                 dfhday.reset_index(drop=True, inplace=True)
                 dfhday.set_index(pd.DatetimeIndex(dfhday['Timestamp']), inplace=True)
@@ -1612,7 +1444,7 @@ def historyconvert(historyfile):
                 dfm = maintenanceoutput(dfoutput, lastused, asset_sn, datasetvazio)
                 dfo = pd.concat([dfo, dfm])
                 dfo.drop_duplicates(subset=['Asset'], inplace=True, keep='last')
-                dfo.dropna(how='all', axis=1, inplace=True)
+                dfo.dropna(how='all', axis=0, inplace=True)
         checkdestiny(os.path.join(destinationfolder, mandirectory))
         dfo.to_csv(os.path.join(destinationfolder, mandirectory) + 'maintenance_output.csv', encoding='utf-8-sig',
                    index=False)
