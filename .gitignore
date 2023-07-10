@@ -3,11 +3,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.exe
+*.xls
+*.xlsx
 
 # C extensions
 *.so
 
 # Distribution / packaging
+.vscode/
 .Python
 build/
 develop-eggs/

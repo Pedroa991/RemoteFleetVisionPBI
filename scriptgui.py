@@ -13,14 +13,15 @@ from scipy import interpolate
 import re
 from shutil import rmtree
 from sys import exit
-#import pandas.core.common
+import cargill
+import shutil
 
 #supressao avisos
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings('ignore')
 #----------
-#Versão v5.2
+#Versão v5.3
 #####################################################################################################
 #                           TEXT AND DATA REPLACEMENT / INVALID DATA CLEANING                       #
 #####################################################################################################
@@ -398,8 +399,8 @@ def maintenanceoutput(dfoutput, lastused, asset_sn, datasetvazio):
     else:
         next_preventiva, next_preventiva_day, next_overhaul, next_overhaul_day, manper_by, manovh_by  = maintcalc(totsh, shd, totfc, fcd, lastused, asset_sn)
         
-    print('Proxima manutenção preventiva:', str(next_preventiva), 'horas.', 'Data:', str(next_preventiva_day))
-    print('Proximo overhaul:', str(next_overhaul), '.', 'Data:', str(next_overhaul_day))
+    print('Proxima manutenção preventiva:', str(next_preventiva), 'horas.', 'Data:', str(next_preventiva_day), '  Método: ', manper_by)
+    print('Proximo overhaul:', str(next_overhaul), '.', 'Data:', str(next_overhaul_day), '  Método: ', manovh_by)
     print(' ')
 
     df = pd.DataFrame([[site_name, asset_sn, shd, sht, totsh, fcd, fct, totfc, next_preventiva, next_preventiva_day,
@@ -979,9 +980,12 @@ def rotinas(dataframe):
     if not dfclean.shape[0] < 1:
         if 'SMH' in dfclean.columns:
             dfclean["SMH"] = dfclean["SMH"].apply(pd.to_numeric)
+            dfclean.loc[dfclean['SMH'] == 0,'SMH'] = np.nan
             dfclean['SMH'].interpolate(inplace=True)
-            dfclean['SMH_DIFF'] = dfclean['SMH'].diff().bfill()
-            dfclean['SMH_DIFF'] = abs(dfclean['SMH_DIFF'].apply(pd.to_numeric))
+            dfclean['Date'] = dfclean['Timestamp'].dt.date
+            dfbyday = dfclean.groupby(dfclean['Date']).agg(SMH_DIFF=("SMH", lambda x: max(x) - min(x)))
+            dfclean = dfclean.merge(dfbyday, how='left',on='Date')
+            dfclean = dfclean.drop('Date', axis =1)
         else:
             dfclean['SMH_DIFF'] = np.nan
             dfclean['SMH'] = np.nan
@@ -992,8 +996,10 @@ def rotinas(dataframe):
             dfclean["Total_Fuel"] = dfclean["Total_Fuel"].apply(pd.to_numeric)
             dfclean.loc[dfclean['Total_Fuel'] == 1,'Total_Fuel'] = np.nan
             dfclean['Total_Fuel'].interpolate(inplace=True)
-            dfclean['Total_Fuel_DIFF'] = dfclean['Total_Fuel'].diff().bfill()
-            dfclean['Total_Fuel_DIFF'] = dfclean['Total_Fuel_DIFF'].apply(pd.to_numeric).abs()
+            dfclean['Date'] = dfclean['Timestamp'].dt.date
+            dfbyday = dfclean.groupby(dfclean['Date']).agg(Total_Fuel_DIFF=("Total_Fuel", lambda x: max(x) - min(x)))
+            dfclean = dfclean.merge(dfbyday, how='left',on='Date')
+            dfclean = dfclean.drop('Date', axis =1)
         else:
             dfclean['Total_Fuel_DIFF'] = np.nan
             print(asset_sn,'Sem dados de Total Fuel')
@@ -1011,7 +1017,10 @@ def rotinas(dataframe):
 
         if 'Load' in dfclean.columns:
             dfclean = dfclean.dropna(axis=0, subset=['Load'])
-            dfclean = dfclean.drop(dfclean[(dfclean['RPM'] == 0) & (dfclean['Load'] == 0)].index)
+            try:
+                dfclean = dfclean.drop(dfclean[(dfclean['RPM'] == 0) & (dfclean['Load'] == 0)].index)
+            except KeyError:
+                dfclean = dfclean.drop(dfclean[(dfclean['Load'] == 0)].index)
             try:    
                 tmidf = openfilewb(os.path.join(infodir, 'TMI_INFO.xlsx'),perfn)
                 dfclean = powercalc(tmidf,dfclean)
@@ -1298,13 +1307,29 @@ def historyconvert(historyfile):
         print('Iniciando Extracting, Transforming and Loading...')
         print(' ')
         
-        for sn in asset_list:
-            x = sn[-8:]
-            dfcarlao = dfmodule.loc[dfmodule['SN']==x]
+        
+        if (not os.path.exists(os.path.dirname(historyfile) + '/BackupDataLog.zip')) and (os.path.basename(destinationfolder) == '01 - BD_CARLAO' or 
+                                                                                          os.path.basename(destinationfolder) == '01 - BD_CARGILL'):
+            shutil.copyfile(historyfile, os.path.dirname(historyfile) + '/BackupDataLog.zip')
+        
+        for snFull in asset_list:
+            sn = snFull[-8:]
+            dfcarlao = dfmodule.loc[dfmodule['SN']==sn]
             dfcarlao = dfcarlao.loc[dfmodule['Modulo']=='carlao']
             if len(dfcarlao) > 0:
-                zf = carlao.carlao(sn,historyfile)
+                zf = carlao.carlao(snFull,historyfile)
                 asset_list.append('MCA - D1K01363')
+        
+        for snFull in asset_list:
+            sn = snFull[-8:]
+            dfcargill = dfmodule.loc[dfmodule['SN']==sn]
+            dfcargill = dfcargill.loc[dfmodule['Modulo']=='cargill']
+            if len(dfcargill) > 0:
+                zf = cargill.cargill(snFull,historyfile)
+                if sn == 'S2K00384':    
+                    asset_list.extend(['S1M06675', 'S1M06677'])
+                elif sn == 'S2K00386':
+                    asset_list.extend(['S1M06672', 'S1M06678'])
 
         global dictsmhday, dictfuelday
         dictsmhday = {}
@@ -1663,8 +1688,8 @@ def preplistas(engine_file, event_file, ts_file, destfolder, deb, concatenardb):
     historyconvert(engine_file)
     eventsconvert(event_file, ts_file)
     limpadao(destinationfolder)
-
-    print('Finished RFV 2.0 Handling Script v5.2')
+    
+    print('Finished RFV 2.0 Handling Script v5.3')
     print()
 
 

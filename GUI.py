@@ -24,7 +24,7 @@ def main():
             self.init_window()
 
         def init_window(self):
-            self.master.title('Tratar Dados RFV v5.2')
+            self.master.title('Tratar Dados RFV v5.3')
             self.pack(fill=BOTH, expand=1)
 
             # Enter Path
@@ -135,7 +135,7 @@ def main():
     #logo sotreq
     scriptpath = os.path.dirname(os.path.realpath(__file__))
 
-    lbl = Label(root, text=r"v5.2 - Maio 2023 - Sobre / Ajuda", fg="blue", cursor="hand2")
+    lbl = Label(root, text=r"v5.3 - Maio 2023 - Sobre / Ajuda", fg="blue", cursor="hand2")
     lbl.pack(side='bottom')
     lbl.bind("<Button-1>", callback)
 
