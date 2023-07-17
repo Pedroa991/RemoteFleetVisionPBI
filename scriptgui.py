@@ -21,7 +21,7 @@ import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings('ignore')
 #----------
-#Versão v5.3
+#Versão V5.4
 #####################################################################################################
 #                           TEXT AND DATA REPLACEMENT / INVALID DATA CLEANING                       #
 #####################################################################################################
@@ -397,8 +397,21 @@ def maintenanceoutput(dfoutput, lastused, asset_sn, datasetvazio):
         manper_by = np.nan
         manovh_by = np.nan
     else:
-        next_preventiva, next_preventiva_day, next_overhaul, next_overhaul_day, manper_by, manovh_by  = maintcalc(totsh, shd, totfc, fcd, lastused, asset_sn)
-        
+        try:
+            (next_preventiva, next_preventiva_day,
+            next_overhaul,next_overhaul_day,
+                manper_by, manovh_by)  = maintcalc(totsh, shd, totfc, fcd, lastused, asset_sn)
+        except Exception as erro:
+            print('Erro na Manutenção!!!')
+            print(erro)
+            next_preventiva = np.nan
+            next_preventiva_day = np.nan
+            next_overhaul = np.nan
+            next_overhaul_day = np.nan
+            manper_by = np.nan
+            manovh_by = np.nan
+
+
     print('Proxima manutenção preventiva:', str(next_preventiva), 'horas.', 'Data:', str(next_preventiva_day), '  Método: ', manper_by)
     print('Proximo overhaul:', str(next_overhaul), '.', 'Data:', str(next_overhaul_day), '  Método: ', manovh_by)
     print(' ')
@@ -494,11 +507,27 @@ def smhcalc(df, assetname):
 
 # next_preventiva, next_preventiva_day = manutcalc(sht, shd, lastused, asset_sn, datasetvazio)
 def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
+
+    try:
+        dfmetodo = dfmainte.loc[dfmainte['SN'] == sn]
+        dfmetodo.reset_index(drop=True, inplace=True)
+        metodo = dfmetodo.loc[0,'Médodo']
+
+        if dfmetodo.shape[0] < 1:
+            if metodo == 'SMH':
+                fday = np.nan
+            elif metodo == 'Fuel':
+                hday = np.nan
+
     
+    except:
+        pass
+
     # PEGA O PREFIXO DE SÉRIE PARA BUSCAR NA PLANILHA ONDE ESTÃO OS INTERVALOS DE MANUTENÇÃO
     try:
         manplan = pd.read_excel(os.path.join(infodir + '/MAINTENANCE_PLAN.xlsx'), sheet_name ='By Model')
         # manplan = manplan.apply(pd.to_numeric, errors='coerce')
+        manplan.loc[manplan['Maintenance Name'].notnull(),'Maintenance Name'] = manplan['Maintenance Name'].astype(str)
         manplan = manplan.dropna(how='all')
         model = findmodel(sn)
         manplan = manplan.loc[manplan['Model'] == model]
@@ -524,6 +553,7 @@ def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
     
     try:
         manshift = pd.read_excel(os.path.join(infodir + '/MAINTENANCE_SHIFT.xlsx'))
+        manshift.loc[manshift['Maintenance Name'].notnull(),'Maintenance Name'] = manshift['Maintenance Name'].astype(str)
         # manutenção realizada
         manshift = manshift.loc[manshift['SN'] == sn]
         # print(forcedman)
@@ -535,12 +565,11 @@ def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
             manshift_name = np.nan
         else:
             # dia da realização
-            #mandate = pd.to_datetime(manshift.loc[1, 'Date'])
             manshift.reset_index(drop=True, inplace=True)
             manfuel = float(manshift.loc[0, 'Total Fuel (L)'])
             mansmh = float(manshift.loc[0, 'Run Hours'])
             manter = manshift.loc[0,'Manter']
-            manshift_name = manshift.loc[0,'Maintenance Name']
+            manshift_name = str(manshift.loc[0,'Maintenance Name'])
             mandate = manshift.loc[0,'Date']
            
     except KeyError:
@@ -560,7 +589,7 @@ def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
     ultovhfuel = manovh['Target Fuel (L)'].max()
 
     
-    if isinstance(manshift_name, str):
+    if isinstance(manshift_name, str) or isinstance(manshift_name, str):
         stdmainsmh = manplan.loc[manplan['Maintenance Name']==manshift_name,'Target SMH'].tolist()[0]
         stdmainfuel = manplan.loc[manplan['Maintenance Name']==manshift_name,'Target Fuel (L)'].tolist()[0]
     
@@ -574,16 +603,19 @@ def maintcalc(lastsmh, hday, lastfuel, fday, lastdayused, sn):
             hday = 0
     
         if isnan(mansmh):
-            daydiff = (lastdayused - mandate).days
+            daydiff = (lastdayused - mandate.days)*-1
             mansmh = lastsmh - hday*daydiff
             
         if isnan(manfuel):
             daydiff = (lastdayused - mandate).days
             manfuel = lastfuel - fday*daydiff
         
-            
-        calsmh = lastsmh + (stdmainsmh*int(mansmh/ultovhsmh) - mansmh)
-        calfuel = lastfuel + (stdmainfuel*int(manfuel/ultovhfuel) - manfuel)
+        if stdmainsmh != ultovhsmh:
+            calsmh = lastsmh - (mansmh - ultovhsmh*int(mansmh/ultovhsmh) - stdmainsmh)
+            calfuel = lastfuel - (manfuel - ultovhfuel*int(manfuel/ultovhfuel) - stdmainfuel)
+        else:
+            calsmh = lastsmh - (mansmh - ultovhsmh*int((mansmh/ultovhsmh)-1) - stdmainsmh)
+            calfuel = lastfuel - (manfuel - ultovhfuel*int((manfuel/ultovhfuel)-1) - stdmainfuel)
     else:
         calsmh = lastsmh
         calfuel = lastfuel
@@ -1645,7 +1677,7 @@ def preplistas(engine_file, event_file, ts_file, destfolder, deb, concatenardb):
     assetinfofile = infodir + 'ASSET_INFO.xlsx'
     global assetlistdf
     assetlistdf = openfilewb(assetinfofile,'ASSET_LIST')
-    global dirconfig, dflistparmraw, dflistcoldel, dflistalertdel, list_invalid_data
+    global dirconfig, dflistparmraw, dflistcoldel, dflistalertdel, list_invalid_data, dfmainte
     dirconfig = infodir + 'ConfigScript.xlsx'
     
     dflistinvdata = openfilewb(dirconfig,'DadosInvalidos')
@@ -1654,6 +1686,10 @@ def preplistas(engine_file, event_file, ts_file, destfolder, deb, concatenardb):
     dflistparmraw =  openfilewb(dirconfig,'ListaParm')
     dflistcoldel = openfilewb(dirconfig,'ColunasDelete')
     dflistalertdel = openfilewb(dirconfig,'AlertasDelete')
+    try:
+        dfmainte = openfilewb(dirconfig,'Maintenance')
+    except:
+        dfmainte = pd.DataFrame(columns=['SN','Método'])
 
     global asset_list
     asset_list = getlistativos(event_file)
@@ -1689,7 +1725,7 @@ def preplistas(engine_file, event_file, ts_file, destfolder, deb, concatenardb):
     eventsconvert(event_file, ts_file)
     limpadao(destinationfolder)
     
-    print('Finished RFV 2.0 Handling Script v5.3')
+    print('Finished RFV 2.0 Handling Script V5.4')
     print()
 
 

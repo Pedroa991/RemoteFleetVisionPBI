@@ -24,7 +24,7 @@ def main():
             self.init_window()
 
         def init_window(self):
-            self.master.title('Tratar Dados RFV v5.3')
+            self.master.title('Tratar Dados RFV V5.4')
             self.pack(fill=BOTH, expand=1)
 
             # Enter Path
@@ -130,12 +130,12 @@ def main():
 
     root = Tk()
     def callback(event):
-        webbrowser.open_new('https://www.linkedin.com/in/pedro-venancio-7793b2178/')
+        webbrowser.open_new('https://www.linkedin.com/in/pedrobvenancio/')
 
     #logo sotreq
     scriptpath = os.path.dirname(os.path.realpath(__file__))
 
-    lbl = Label(root, text=r"v5.3 - Maio 2023 - Sobre / Ajuda", fg="blue", cursor="hand2")
+    lbl = Label(root, text=r"V5.4 - Julho 2023 - Sobre / Ajuda", fg="blue", cursor="hand2")
     lbl.pack(side='bottom')
     lbl.bind("<Button-1>", callback)
 
