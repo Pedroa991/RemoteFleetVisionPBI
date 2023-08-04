@@ -15,13 +15,14 @@ from shutil import rmtree
 from sys import exit
 import cargill
 import shutil
+import tbg
 
 #supressao avisos
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings('ignore')
 #----------
-#Versão V5.4
+#Versão V5.6
 #####################################################################################################
 #                           TEXT AND DATA REPLACEMENT / INVALID DATA CLEANING                       #
 #####################################################################################################
@@ -344,13 +345,10 @@ def findmodel(asset):
 def renamecol(df, sn):
     dflistparm = dflistparmraw.loc[dflistparmraw['SN']==sn]
     dflistparm.reset_index(drop=True, inplace=True)
-    i=0
-    while i < len(dflistparm):
-        col1 = dflistparm.loc[i, 'Nome da coluna']
-        if col1 in df.columns:
-            x = dflistparm.loc[i, 'Renomear para']
-            df = df.rename(columns={col1: x})
-            i += 1
+    if len(dflistparm)>0:
+        dictColRename = dflistparm.set_index('Nome da coluna').to_dict()['Renomear para']
+        df.rename(columns=dictColRename,inplace=True)
+
     return df
 
 def delcol(df):
@@ -815,7 +813,15 @@ def load_histogram(dataframe, rawdf, a_sn):
     for b in range(h):
         perc.append(n)
         n += 10
+    
+    if not 'Load' in dataframe:
+        dataframe['Load'] = np.nan
+    
     dataframe["Load"] = dataframe["Load"].apply(pd.to_numeric)
+    
+    if not 'RPM' in dataframe:
+        dataframe['RPM'] = np.nan
+    
     dataframe["RPM"] = dataframe["RPM"].apply(pd.to_numeric)
     engine_pw = dataframe.query("RPM > 0")["Load"]
     serieshist1 = engine_pw.value_counts(sort=False, bins=perc, normalize=True).round(4) * 100
@@ -1359,9 +1365,12 @@ def historyconvert(historyfile):
             if len(dfcargill) > 0:
                 zf = cargill.cargill(snFull,historyfile)
                 if sn == 'S2K00384':    
-                    asset_list.extend(['S1M06675', 'S1M06677'])
+                    asset_list.extend(['S1M07110', 'S1M07112'])
                 elif sn == 'S2K00386':
                     asset_list.extend(['S1M06672', 'S1M06678'])
+        
+        
+                
 
         global dictsmhday, dictfuelday
         dictsmhday = {}
@@ -1454,6 +1463,14 @@ def historyconvert(historyfile):
 
                 # chama rotinas aplicáveis ao dataframe
                 rotinas(dataframe)
+
+                #Módulo tbg
+                
+                dftgb = dfmodule.loc[dfmodule['SN']==asset_sn]
+                dftgb = dftgb.loc[dfmodule['Modulo']=='tbg']
+                if len(dftgb) > 0:
+                    dfclean['Diff_Temp_Cilindro'] = tbg.tbg(dfclean)
+
                 # salva dataframe pronto na pasta dos parametros
                 dfclean.to_csv(os.path.join(destinationfolder, workfolder) + asset_sn + '.csv', encoding='utf-8-sig',
                                index=False)
@@ -1725,7 +1742,7 @@ def preplistas(engine_file, event_file, ts_file, destfolder, deb, concatenardb):
     eventsconvert(event_file, ts_file)
     limpadao(destinationfolder)
     
-    print('Finished RFV 2.0 Handling Script V5.4')
+    print('Finished RFV 2.0 Handling Script V5.6')
     print()
 
 

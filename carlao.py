@@ -4,6 +4,7 @@ import zipfile
 import pandas as pd
 import os
 import shutil
+from sys import exit
 
 def remove_from_zip(zipfname, *filenames):
     tempdir = tempfile.mkdtemp()
@@ -20,6 +21,7 @@ def remove_from_zip(zipfname, *filenames):
         shutil.rmtree(tempdir)
 
 def carlao(sn,end):
+    print('Modulo carlao executado! em ', sn, '\n')
     zf = zipfile.ZipFile(end, mode = 'r')
     csv = pd.read_csv(zf.open(sn + '.csv'), encoding='utf-16le', dtype=object)
     zf.close()
@@ -55,4 +57,6 @@ def carlao(sn,end):
     return zf
     
 
-
+if __name__ == '__main__':
+    print('Você deve executar o arquivo GUI.py do conversor.')
+    exit()

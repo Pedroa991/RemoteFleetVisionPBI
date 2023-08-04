@@ -1,10 +1,11 @@
-#Cargil v1
+#Cargil v1.1
 
 import tempfile
 import zipfile
 import pandas as pd
 import os
 import shutil
+from sys import exit
 
 def remove_from_zip(zipfname, *filenames):
     tempdir = tempfile.mkdtemp()
@@ -22,8 +23,10 @@ def remove_from_zip(zipfname, *filenames):
 
 def cargill(sn,end):
     
+    print('Modulo cargill executado! em ', sn,'\n')
+
     if sn[-8:] == 'S2K00384':
-        list_sn = ['S1M06675', 'S1M06677']
+        list_sn = ['S1M07110', 'S1M07112']
     elif sn[-8:] == 'S2K00386':
         list_sn = ['S1M06672', 'S1M06678']
 
@@ -43,6 +46,13 @@ def cargill(sn,end):
         dfEngAux = dfMainEng.loc[:,listColEngAux]
         listColEngAux.remove('Sample Time')
         dfMainEng = dfMainEng.drop(columns=listColEngAux)
+        
+        #Fix load factor para porcentagem
+        loadCol = prefix + ' Power Factor'
+        if loadCol in dfEngAux.columns:
+            dfEngAux[loadCol] = pd.to_numeric(dfEngAux[loadCol], errors='ignore')
+            dfEngAux[loadCol] = dfEngAux.loc[dfEngAux[loadCol] <= 1.2, loadCol]*100
+
         dfEngAux.to_csv(tempdir + '/' + list_sn[i] + '.csv', index=False, encoding = 'utf-16le')
     
     dfMainEng.to_csv(tempdir + '/' + sn + '.csv', index=False, encoding = 'utf-16le')
@@ -58,7 +68,9 @@ def cargill(sn,end):
     
     return zf
 
-        
+if __name__ == '__main__':
+    print('Você deve executar o arquivo GUI.py do conversor.')
+    exit()
 
 
         

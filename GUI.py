@@ -24,7 +24,7 @@ def main():
             self.init_window()
 
         def init_window(self):
-            self.master.title('Tratar Dados RFV V5.4')
+            self.master.title('Tratar Dados RFV V5.6')
             self.pack(fill=BOTH, expand=1)
 
             # Enter Path
@@ -77,7 +77,6 @@ def main():
             if not os.path.exists(path):
                 showerror('Erro! Pasta de destino inválida!',
                           'Escolha a pasta de destino desejada para continuar')
-                # self.pathText.delete(0, END)
             else:
                 if not engine_file:
                     showerror('Erro: Arquivo de motores não encontrado!',
@@ -135,7 +134,7 @@ def main():
     #logo sotreq
     scriptpath = os.path.dirname(os.path.realpath(__file__))
 
-    lbl = Label(root, text=r"V5.4 - Julho 2023 - Sobre / Ajuda", fg="blue", cursor="hand2")
+    lbl = Label(root, text=r"V5.6 - Agosto 2023 - Sobre / Ajuda", fg="blue", cursor="hand2")
     lbl.pack(side='bottom')
     lbl.bind("<Button-1>", callback)
 
